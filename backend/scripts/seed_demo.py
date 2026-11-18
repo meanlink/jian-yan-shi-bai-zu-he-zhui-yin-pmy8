@@ -4,9 +4,27 @@ from src.config.database import Session
 from migrations.initial import migrate
 from src.models import User, Dataset, Job, Report, Delivery, Audit
 from src.services.business import metadata, seed_records, analyze
+from src.services import legacy
 from src.services.reports import deliver
 from src.utils.security import hash_password
 from src.utils.serialization import checksum
+
+
+def _legacy_demo_records(full_rows):
+    """从完整模拟数据退化出旧仪器格式：保留 fail_total，仅暴露部分单项，其余置空。"""
+    partial = []
+    for index, row in enumerate(full_rows):
+        item_keys = [k for k in row if k != 'batch_id']
+        total = sum(int(row[k]) for k in item_keys)
+        kept = item_keys[: 1 + index % 3]  # 每批仅保留 1~3 个已知单项
+        partial.append({
+            'batch_id': row['batch_id'],
+            'fail_total': total,
+            **{k: (row[k] if k in kept else None) for k in item_keys},
+        })
+    return partial
+
+
 def seed():
     migrate()
     with Session() as db:
@@ -21,6 +39,17 @@ def seed():
             rows=seed_records()
             d=Dataset(name=m['dataset_name'],source=m['short']+'-202611.csv',records=rows,checksum=checksum(rows),created_at=time.time())
             db.add(d); db.flush()
+        # 旧仪器部分项演示批次：同一观测退化而来，缺失项留空
+        legacy_name='旧仪器归档 · 失败总数与部分单项'
+        legacy_dataset=db.scalar(select(Dataset).where(Dataset.name==legacy_name))
+        if not legacy_dataset:
+            raw_partial=_legacy_demo_records(seed_records())
+            normalized=legacy.normalize_legacy_records(raw_partial)
+            stored=[legacy.partial_view(r) for r in normalized]
+            legacy_dataset=Dataset(name=legacy_name,source='legacy-assay-202610.csv',records=stored,
+                                   checksum=checksum(stored),created_at=time.time(),kind='legacy',
+                                   version_note='旧仪器仅存每批失败总数与部分单项')
+            db.add(legacy_dataset); db.flush()
         if not db.scalar(select(Job).where(Job.name=='基线复核 · '+m['name'])):
             params={p['key']:p['default'] for p in m.get('parameters',[])}
             result=analyze(d.records,params)

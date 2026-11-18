@@ -4,7 +4,14 @@
 
 ## 模块与业务流程
 数据接入（JSON/CSV、字段验证、批次指纹）→ 参数化分析（异步 Python worker）→ 结果复核（指标、图形、明细、解释、批准）→ 定时分发（本地收件箱、CSV/JSON、SHA256）；另有业务总览和审计轨迹。
-三个贯穿全栈的实体：Dataset 数据批次、Job 分析任务、Report 分发计划；辅助 User、Audit、Delivery。
+三个贯穿全栈的实体：Dataset 数据批次、Job 分析任务、Report 分发计划；辅助 User、Audit、Delivery，以及旧仪器部分项分析专用的 RuleJudgment 逐规则判定登记。
+
+## 旧仪器部分单项数据（legacy）
+旧仪器仅留存每批失败项总数 `fail_total` 与部分单项 0/1 结果（未测项留空或 null，至少一项已知）。
+- 接入：`POST /api/datasets/legacy`，逐批枚举满足总数的可行补全；已知项与总数对不上（已知失败数超总数、未知项不足以补齐等）整批拒收并注明批次。
+- 分析：沿用最多 3 项、正反向独立的候选范围与同一阈值，在所有可行补全空间上把每条规则判为**必然入选 / 可能入选 / 不可能入选**；可能规则各附一份入选与落选的逐批补全见证，供结果页展开核对。判定引擎为纯标准库 Pareto 动态规划（`src/services/uncertain.py`），结果精确而非抽样。
+- 中断续跑：逐规则写入 `rule_judgments`（job_id+rule_key 唯一约束），每条独立提交；worker 中断后从已判规则续跑、重试不重复登记，全部判定齐全才置 completed，结果页按 4 秒轮询展示 `judged/total` 进度。
+- 数据版本：任务提交时把记录快照与校验和存入 Job（`input_snapshot/input_checksum`），分析沿用提交时版本；补录通过 `POST /api/datasets/{id}/versions` 另存为带谱系（`version_of_id`）的新批次，原批次与在途任务不变，新版本另建任务重算。
 
 ## 快速启动
 ```bash

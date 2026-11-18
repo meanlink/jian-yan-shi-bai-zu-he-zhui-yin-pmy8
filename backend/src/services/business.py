@@ -1,9 +1,7 @@
 """检验失败项的Apriori频繁项集与关联规则，不作因果断言。"""
 from itertools import combinations
 import numpy as np
-
-ITEMS = ["heat_fail", "ph_fail", "viscosity_fail", "ash_fail", "color_fail"]
-NAMES = {"heat_fail": "热稳定失败", "ph_fail": "pH偏离", "viscosity_fail": "黏度失败", "ash_fail": "灰分失败", "color_fail": "色差失败"}
+from src.constants.assay import ITEMS, NAMES
 
 
 def metadata():
